@@ -1,148 +1,185 @@
 import streamlit as st
-import numpy as np
 import folium
-import tempfile
+import time
 
-# ==========================================
-# 1. КОНФИГУРАЦИЯ И СТИЛИЗАЦИЯ (CSS)
-# ==========================================
-st.set_page_config(page_title="AquaScan Астана", layout="wide")
+# --- НАСТРОЙКА СТРАНИЦЫ И CSS ---
+st.set_page_config(page_title="AquaScan AI", layout="wide")
 
 st.markdown("""
 <style>
-    /* Фон страницы и сайдбара */
+    /* Общий фон приложения и сайдбара */
     .stApp {
         background-color: #0E1117;
         color: #FAFAFA;
     }
-    /* Стили для метрик и карточек */
+    .css-1d391kg, .css-1lcbmhc {
+        background-color: #161B22;
+    }
+    
+    /* Текст в сайдбаре */
+    .stSidebar .stMarkdown, .stSidebar .stSelectbox, .stSidebar .stSlider, .stSidebar .stTextInput {
+        color: #FFFFFF !important;
+    }
+    
+    /* Карточки метрик (цифры) */
     div[data-testid="metric-container"] {
         background-color: #1E2430;
-        border: 1px solid #4CAF50;
+        border: 1px solid #30363D;
         padding: 15px;
         border-radius: 10px;
-        color: white;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5);
     }
+    div[data-testid="metric-container"] label {
+        color: #8b949e !important;
+    }
+    div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
+        color: #FFFFFF !important; /* Делаем цифры ярко-белыми */
+        font-size: 32px;
+    }
+
     /* Кнопки */
     .stButton > button {
-        background-color: #4CAF50;
+        background-color: #1E90FF;
         color: white;
         border-radius: 8px;
         border: none;
         font-weight: bold;
         width: 100%;
-        padding: 12px 20px;
-        font-size: 16px;
     }
     .stButton > button:hover {
-        background-color: #45a049;
-        transform: scale(1.02);
+        background-color: #3da0ff;
+    }
+    
+    /* Кнопки скачивания */
+    .stDownloadButton > button {
+        background-color: #1E90FF;
         color: white;
+        border-radius: 8px;
+        border: none;
+        font-weight: bold;
+        width: 100%;
+    }
+    .stDownloadButton > button:hover {
+        background-color: #3da0ff;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# ==========================================
-# 2. ФУНКЦИЯ ГЕНЕРАЦИИ СЕГМЕНТИРОВАННОЙ КАРТЫ
-# ==========================================
-def generate_ishim_map():
-    """Создает карту Астаны с полилиниями русла Ишима, разбитыми на классы."""
-    # Центрируем карту по средним координатам русла Ишима в Астане
-    m = folium.Map(location=[51.166, 71.425], zoom_start=13, control_scale=True)
-    
-    # Координаты точек русла реки Ишим
-    p1 = [51.180, 71.405]
-    p2 = [51.170, 71.415]
-    p3 = [51.160, 71.430]
-    p4 = [51.155, 71.450]
-    
-    # Сегмент 1: Чистая вода (Синий)
-    folium.PolyLine(
-        locations=[p1, p2],
-        color="blue",
-        weight=8,
-        opacity=0.85,
-        popup=folium.Popup("<b>Статус:</b> Чистая вода<br><b>Индекс NDWI:</b> Высокий", max_width=200)
-    ).add_to(m)
-    
-    # Сегмент 2: Нефтяное загрязнение (Красный)
-    folium.PolyLine(
-        locations=[p2, p3],
-        color="red",
-        weight=8,
-        opacity=0.85,
-        popup=folium.Popup("<b>Статус:</b> Компоненты нефти<br><b>Вероятность:</b> 12.5%", max_width=200)
-    ).add_to(m)
-    
-    # Сегмент 3: Водоросли / Цветение (Желтый)
-    folium.PolyLine(
-        locations=[p3, p4],
-        color="yellow",
-        weight=8,
-        opacity=0.85,
-        popup=folium.Popup("<b>Статус:</b> Активное цветение<br><b>Плотность:</b> 8.2%", max_width=200)
-    ).add_to(m)
-    
-    return m
 
-# ==========================================
-# 3. ИНТЕРФЕЙС БОКОВОЙ ПАНЕЛИ (SIDEBAR)
-# ==========================================
-st.sidebar.header("📁 Параметры AquaScan")
-st.sidebar.info("📍 Локация: г. Астана, р. Ишим")
+# --- САЙДБАР ---
+st.sidebar.title("⚙️ Настройки сканирования")
+
+location = st.sidebar.selectbox("📍 Выберите локацию:", ["г. Астана, р. Ишим", "Озеро Балхаш (демо)"])
+threshold = st.sidebar.slider("🎯 Порог срабатывания алерта (%)", 0, 100, 5, format="%d%%")
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("🚨 Настройка алертов")
-email_input = st.sidebar.text_input("Email для экстренных уведомлений:", value="eco-officer@astana.kz")
-alert_threshold = st.sidebar.slider("Порог тревоги (% аномалий):", min_value=0, max_value=100, value=10)
+st.sidebar.subheader("🔔 Уведомления")
+email = st.sidebar.text_input("Email для экстренных отчетов:")
 
-# ==========================================
-# 4. ЛОГИКА ГЛАВНОГО ЭКРАНА
-# ==========================================
-st.title("🛰️ AquaScan — Мониторинг акваторий")
-st.caption("Система оперативного анализа экологического состояния водных ресурсов")
+if st.sidebar.button("Активировать мониторинг"):
+    if email:
+        st.sidebar.success(f"✅ Оповещения включены для {email}")
+    else:
+        st.sidebar.warning("⚠️ Введите Email для получения алертов")
 
-# Кнопка запуска анализа по центру
-st.markdown("### Экспресс-анализ спутниковых снимков")
-run_analysis = st.button("🚀 ЗАПУСТИТЬ АНАЛИЗ")
 
-st.markdown("---")
+# --- ОСНОВНОЙ ЭКРАН ---
+st.title("🛰️ AquaScan AI: Спутниковый мониторинг")
 
-# Проверка состояния: нажал ли пользователь кнопку
-if run_analysis:
-    # Имитация работы ML-модели
-    with st.spinner("Загрузка растровых спектральных данных и запуск ML-модели..."):
-        # 1. Вывод метрик в 3 колонки
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric(label="Нефтяное загрязнение", value="12.5%", delta="⚠️ Выше нормы")
-        with col2:
-            st.metric(label="Цветение водорослей", value="8.2%", delta="🌱 Умеренно")
-        with col3:
-            st.metric(label="Уверенность модели", value="95.0%", delta="🎯 Точно")
-            
-        # 2. Триггер алертов на основе введенных в сайдбаре настроек
-        # Так как загрязнение нефти (12.5%) + водоросли (8.2%) = ~20.7% общих аномалий
-        total_anomalies = 20.7
-        if total_anomalies > alert_threshold:
-            st.warning(f"⚠️ Обнаружен уровень аномалий {total_anomalies}% (Порог: {alert_threshold}%)!")
-            st.success(f"📧 Сгенерирован рапорт. Уведомление отправлено на почту **{email_input}**")
+status_placeholder = st.empty()
+status_placeholder.info("⏳ Ожидание запуска анализа...")
 
-        # 3. Генерация и отображение интерактивной карты русла реки
-        st.markdown("### Карта векторов загрязнения русла реки Ишим")
-        map_object = generate_ishim_map()
-        
-        # Рендеринг Folium во временный HTML-файл для встраивания в Streamlit
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as tmp:
-            map_object.save(tmp.name)
-            with open(tmp.name, 'r', encoding='utf-8') as f:
-                html_string = f.read()
-        st.components.v1.html(html_string, height=500)
-        
-        st.markdown("**Легенда русла:** 🔵 Чистая вода | 🔴 Нефтяные пленки | 🟡 Очаги размножения водорослей")
-        st.info("💡 Нажмите на цветные участки реки на карте, чтобы увидеть подробную информацию по сегменту.")
+if st.button("🚀 ЗАПУСТИТЬ АНАЛИЗ", type="primary"):
+    status_placeholder.empty()
+    
+    # Имитация работы сервера
+    with st.spinner('⏳ Спутник Sentinel-2 передает данные... ИИ обрабатывает каналы...'):
+        time.sleep(2.5)
+    
+    # Эмуляция ML-расчетов
+    oil = 12.5
+    algae = 8.2
+    confidence = 95.0
+    date_str = "20.07.2026"
 
-else:
-    # Состояние по умолчанию до клика по кнопке
-    st.info("ℹ️ **Ожидание снимка.** Нажмите кнопку выше, чтобы запустить процедуру сегментации водного объекта.")
+    st.success("✅ Анализ снимков Sentinel-2 успешно завершен!")
+
+    # --- ИСПРАВЛЕНИЕ: ЯРКАЯ БЕЛАЯ НАДПИСЬ ЛОКАЦИИ ---
+    if location == "г. Астана, р. Ишим":
+        loc_text = "г. Астана, р. Ишим"
+        map_center = [51.169, 71.449]
+        poly_points = [[51.180, 71.405], [51.175, 71.410], [51.170, 71.415], [51.165, 71.420], [51.160, 71.425], [51.155, 71.430]]
+    else:
+        loc_text = "Озеро Балхаш"
+        map_center = [45.0, 74.0]
+        poly_points = [[45.05, 74.05], [45.04, 74.08], [45.03, 74.12], [45.02, 74.15], [45.01, 74.18], [45.00, 74.20]]
+
+    st.markdown(f"""
+    <h3 style='color: #FFFFFF; font-weight: bold; margin-top: 10px; margin-bottom: 10px;'>
+        📍 Активный мониторинг: {loc_text}
+    </h3>
+    """, unsafe_allow_html=True)
+
+    # Логика порога
+    if oil >= threshold:
+        st.error(f"⚠️ ТРЕВОГА! Загрязнение нефтью ({oil}%) превысило порог в {threshold}%! Срочно проверьте почту!")
+        if not email:
+            st.warning("⚠️ Алерт не отправлен, так как Email не указан в настройках.")
+    else:
+        st.success(f"✅ Экологическая обстановка в норме. Загрязнение ({oil}%) ниже порога ({threshold}%).")
+
+    # Метрики
+    col1, col2, col3 = st.columns(3)
+    col1.metric("🛢️ Нефтепродукты", f"{oil}%", "+2.1% с прошлого снимка")
+    col2.metric("🧪 Цветение водорослей", f"{algae}%", "-0.5%")
+    col3.metric("🎯 Точность ИИ", f"{confidence}%", "На основе уверенности модели")
+
+    # Метаданные снимка
+    st.caption(f"🛰️ Источник: Sentinel-2 L2A | Дата съемки: {date_str} | Облачность: <5% | Разрешение: 10м/пикс")
+
+    # Карта
+    st.subheader("🗺️ Интерактивная карта загрязнений")
+    st.markdown("🔴 Красный: Нефтепродукты | 🟡 Желтый: Водоросли | 🔵 Синий: Чистая вода")
+
+    m = folium.Map(location=map_center, zoom_start=12, tiles='CartoDB dark_matter')
+
+    # Рисуем эмуляцию реки с разными загрязнениями
+    folium.Polygon(
+        locations=[poly_points[0], poly_points[1], poly_points[2]],
+        color="red", fill=True, fill_color="red", fill_opacity=0.6, popup="Нефтяное загрязнение"
+    ).add_to(m)
+
+    folium.Polygon(
+        locations=[poly_points[2], poly_points[3], poly_points[4]],
+        color="yellow", fill=True, fill_color="yellow", fill_opacity=0.6, popup="Цветение водорослей"
+    ).add_to(m)
+
+    folium.Polygon(
+        locations=[poly_points[4], poly_points[5], poly_points[0]],
+        color="blue", fill=True, fill_color="blue", fill_opacity=0.6, popup="Чистая вода"
+    ).add_to(m)
+
+    # Отображение карты
+    folium_map_html = m._repr_html_()
+    st.components.v1.html(folium_map_html, width=800, height=550)
+
+    # Экспорт отчетов
+    st.markdown("---")
+    col_exp1, col_exp2 = st.columns(2)
+    
+    with col_exp1:
+        st.download_button(
+            label="📄 Скачать отчет (PDF)",
+            data=f"Эмуляция PDF отчета.\nДата: {date_str}\nНефть: {oil}%\nВодоросли: {algae}%\nТочность: {confidence}%",
+            file_name=f"AquaScan_Report_{date_str}.pdf",
+            mime="application/pdf"
+        )
+    
+    with col_exp2:
+        csv_data = f"Дата,Локация,Нефть,Водоросли,Точность\n{date_str},{loc_text},{oil},{algae},{confidence}"
+        st.download_button(
+            label="📊 Скачать данные (CSV)",
+            data=csv_data,
+            file_name=f"AquaScan_Data_{date_str}.csv",
+            mime="text/csv"
+        )
